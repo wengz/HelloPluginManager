@@ -16,6 +16,11 @@ import java.util.Map;
 
 public class PluginInfo {
 
+    public ResolveInfo getMainActivity() {
+        return mainActivity;
+    }
+
+
     public void setId(String id) {
         this.id = id;
     }
@@ -46,6 +51,8 @@ public class PluginInfo {
     private List<ResolveInfo> services;
     private List<ResolveInfo> receivers;
     private List<ResolveInfo> providers;
+
+    PluginContextWrapper appWrapper;
 
     public void setClassLoader(PluginClassLoader classLoader) {
         this.classLoader = classLoader;
@@ -251,4 +258,16 @@ public class PluginInfo {
     public Application getApplication() {
         return application;
     }
+
+    public boolean isInvokeSuperOnbackPressed (ActivityInfo act){
+        if (act == null){
+            return true;
+        }
+        int flags = getFlags(act);
+        if (flags == 0){
+            return true;
+        }
+        return containsFlag(flags, FLAG_INVOKE_SUPER_ON_BACKPRESSED);
+    }
+
 }

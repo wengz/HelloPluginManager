@@ -2,6 +2,7 @@ package com.example.wengzc.hellopluginmanager;
 
 import android.app.Activity;
 import android.app.Application;
+import android.app.Service;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -9,29 +10,64 @@ import android.content.pm.ActivityInfo;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Build;
+import android.support.v4.app.AppLaunchChecker;
 import android.webkit.WebStorage;
 
 import java.io.File;
+import java.io.FileFilter;
+import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-public class PluginManager {
+public class PluginManager implements FileFilter{
 
+    private static final PluginManager instance = new PluginManager();
     private Context context;
-    private String dexOutputPath;
-    private File dexInternalStoragePath;
-    private CJClassLoader classLoader;
 
     private final Map<String, PluginInfo> pluginPkgToInfoMap = new ConcurrentHashMap<>();
     private final Map<String, PluginInfo> pluginIdToInfoMap = new ConcurrentHashMap<>();
+
+
+    private String dexOutputPath;
+    private File dexInternalStoragePath;
+    private CJClassLoader classLoader;
 
     private volatile boolean hasInit = false;
     private volatile Activity appAty;
 
     private PluginManager (){}
 
+    public static PluginManager getInstance (Context context){
+        if (instance.hasInit || context == null){
+            if (instance.appAty == null && context instanceof Activity){
+                instance.appAty = (Activity) context;
+            }
+            return instance;
+        }else{
+            Context ctx = context;
+            if (context instanceof  Activity){
+                instance.appAty = (Activity) context;
+                ctx = ((Activity) context).getApplication();
+            }else if (context instanceof Service){
+                ctx = ((Service) context).getApplication();
+            }else if (context instanceof Application){
+                ctx = context;
+            }else {
+                ctx = context.getApplicationContext();
+            }
+            synchronized (PluginManager.class){
+                instance.init(ctx);
+            }
+            return instance;
+        }
+    }
 
+
+    /**
+     *
+     * @param context  ApplicationContext ??
+     */
     private void init (Context context){
         this.context = context;
 
@@ -44,6 +80,7 @@ public class PluginManager {
         dexInternalStoragePath = context.getDir("plugins", Context.MODE_PRIVATE);
         dexInternalStoragePath.mkdirs();
 
+        //修改Application的ClassLoader
         try{
             Object mPackageInfo = ReflectionUtils.getFieldValue(
                     context, "mBase.mPackageInfo", true);
@@ -56,10 +93,29 @@ public class PluginManager {
         hasInit = true;
     }
 
-    public static PluginManager getInstance (){
-        return null;
+
+    public boolean startMainActivity (Context context, String pkgOrId){
+        PluginInfo plug =  getPlugActivityInfo(context, pkgOrId);
+        if (classLoader == null){
+            return false;
+        }
+        if (plug.getMainActivity() == null){
+            return false;
+        }
+        if  (plug.getMainActivity().activityInfo == null){
+            return false;
+        }
+        String className = classLoader.newActivityClassName(plug.getId(),
+                plug.getMainActivity().activityInfo.name);
+        Intent intent = new Intent();
+        intent.setComponent(new ComponentName(context, className));
+        context.startActivity(intent);
+        return true;
     }
 
+    public static PluginManager getInstance (){
+        return instance;
+    }
 
     public void startActivity (Context context, Intent intent){
         performStartActivity(context, intent);
@@ -83,18 +139,6 @@ public class PluginManager {
         return plug;
     }
 
-    public PluginInfo getPluginByPackageName (String packageName){
-        return pluginPkgToInfoMap.get(packageName);
-    }
-
-    public PluginInfo getPluginById (String pluginId){
-        if (pluginId == null){
-            return null;
-        }
-        return pluginIdToInfoMap.get(pluginId);
-    }
-
-
     private void performStartActivity (Context context, Intent intent){
         checkInit();
 
@@ -115,6 +159,18 @@ public class PluginManager {
     }
 
 
+    public PluginInfo getPluginByPackageName (String packageName){
+        return pluginPkgToInfoMap.get(packageName);
+    }
+
+    public PluginInfo getPluginById (String pluginId){
+        if (pluginId == null){
+            return null;
+        }
+        return pluginIdToInfoMap.get(pluginId);
+    }
+
+
     private void checkInit (){
         if (!hasInit){
             throw new IllegalStateException("");
@@ -126,11 +182,11 @@ public class PluginManager {
     }
 
     public void uninstallPluginById (String pluginId){
-
+        uninstallPlugin(pluginId, true);
     }
 
     public void uninstallPluginByPkg (String pkg){
-
+        uninstallPlugin(pkg, false);
     }
 
     private void uninstallPlugin (String k, boolean isId){
@@ -153,6 +209,31 @@ public class PluginManager {
         }
 
     }
+
+    private PluginInfo removePlugById (String pluginId){
+        PluginInfo pl = null;
+        synchronized (this){
+            pl = pluginIdToInfoMap.remove(pluginId);
+            if (pl == null){
+                return null;
+            }
+            pluginPkgToInfoMap.remove(pl.getPackageName());
+        }
+        return pl;
+    }
+
+    private PluginInfo removePlugByPkg (String pkg){
+        PluginInfo pl = null;
+        synchronized (this){
+            pl = pluginPkgToInfoMap.remove(pl.getPackageName());
+            if (pl == null){
+                return null;
+            }
+            pluginIdToInfoMap.remove(pl.getId());
+        }
+        return pl;
+    }
+
 
 
     private PluginInfo buildPluginInfo (File pluginApk, String pluginId,
@@ -186,13 +267,80 @@ public class PluginManager {
         }catch (Exception e){
             e.printStackTrace();
         }
-
-
-
+        if (appAty != null){
+            initPluginApplication(info, appAty, true);
+        }
+        return info;
     }
 
-    void initPluginApplication (final PluginInfo info, Activity actFrom){
-        init
+    void initPluginApplication (final PluginInfo info, Activity actFrom) throws Exception {
+        initPluginApplication(info, actFrom, false);
+    }
+
+    void initPluginApplication (final PluginInfo plugin, Activity actFrom, boolean onLoad) throws Exception {
+        if (!onLoad && plugin.getApplication() != null){
+            return;
+        }
+        final String className = plugin.getPackageInfo().applicationInfo.name;
+        if (className == null){
+            if (onLoad){
+                return;
+            }
+            Application application = new Application();
+            setApplicationBase(plugin, application);
+            return;
+        }
+
+        Runnable setApplicationTask = new Runnable() {
+            @Override
+            public void run() {
+                ClassLoader loader = plugin.getClassLoader();
+                try{
+                    Class<?> applicationClass = loader.loadClass(className);
+                    Application application = (Application) applicationClass.newInstance();
+                    setApplicationBase(plugin, application);
+                    application.onCreate();
+
+                }catch (Exception e){
+                    e.printStackTrace();
+                }
+            }
+        };
+
+        if (actFrom == null){
+            if (onLoad){
+                return;
+            }
+            setApplicationTask.run();
+        }else{
+            actFrom.runOnUiThread(setApplicationTask);
+        }
+    }
+
+
+    private void setApplicationBase (PluginInfo plugin, Application application) throws Exception {
+
+        synchronized (plugin){
+            if (plugin.getApplication() != null){
+                return;
+            }
+            plugin.setApplication(application);
+
+            PluginContextWrapper ctxWrapper = new PluginContextWrapper(context, plugin);
+            plugin.appWrapper = ctxWrapper;
+
+            Method attachMethod = Application.class.getDeclaredMethod("attach", Context.class);
+            attachMethod.setAccessible(true);
+            attachMethod.invoke(application, ctxWrapper);
+            if (context instanceof Application){
+                if (Build.VERSION.SDK_INT >= 14){
+                    Application.class.getMethod(
+                            "registerComponentCallbacks",
+                            Class.forName("android.content.ComponentCallbacks"))
+                            .invoke(context, application);
+                }
+            }
+        }
     }
 
 
@@ -200,45 +348,24 @@ public class PluginManager {
         FileUtil.copyFile(pluginApk, f);
     }
 
-    private void setApplicationBase (PluginInfo plugin, Application application)
-        throws  Exception{
-
-        synchronized (plugin){
-            if (plugin.getApplication() != null){
-                return;
-            }
-
-            plugin.setApplication(application);
-
-
-
-        }
+    File getDexInternalStoragePath (){
+        return dexInternalStoragePath;
     }
 
-
-
-
-    private PluginInfo removePlugById (String pluginId){
-        PluginInfo pl = null;
-        synchronized (this){
-            pl = pluginIdToInfoMap.remove(pluginId);
-            if (pl == null){
-                return null;
-            }
-            pluginPkgToInfoMap.remove(pl.getPackageName());
-        }
-        return pl;
+    Context getContext (){
+        return context;
     }
 
-    private PluginInfo removePlugByPkg (String pkg){
-        PluginInfo pl = null;
-        synchronized (this){
-            pl = pluginPkgToInfoMap.remove(pl.getPackageName());
-            if (pl == null){
-                return null;
-            }
-            pluginIdToInfoMap.remove(pl.getId());
+    CJClassLoader getFrameworkClassLoader (){
+        return classLoader;
+    }
+
+    @Override
+    public boolean accept(File pathname) {
+        if (pathname.isDirectory()){
+            return false;
         }
-        return pl;
+        String fname = pathname.getName();
+        return fname.endsWith(".apk");
     }
 }
