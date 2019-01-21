@@ -47,4 +47,13 @@ public class ActivityOverider {
 
 
 
+    static File getPluginLibDir (String pluginId){
+        return null;
+    }
+
+
+    static File getPluginBaseDir(String pluginId) {
+        return null;
+    }
+
 }

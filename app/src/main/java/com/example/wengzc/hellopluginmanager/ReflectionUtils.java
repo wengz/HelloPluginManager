@@ -19,6 +19,24 @@ public class ReflectionUtils {
         return (T)field.get(targetObj);
     }
 
+    public static void setFieldValue (Object obj, String fieldName, Object value) throws Exception {
+        setFieldValue(obj, fieldName, value, true);
+    }
+
+    public static void setFieldValue (Object obj, String fieldName, Object value, boolean resolveParent)
+        throws Exception{
+        Object[] rs = getField(obj, fieldName, resolveParent);
+        if (rs == null){
+            throw new NoSuchFieldException("");
+        }
+        Field field = (Field) rs[0];
+        Object targetObj = rs[1];
+        field.set(targetObj, value);
+
+    }
+
+
+
 
     private static Object[] getField (Object obj, String elFieldlName, boolean resolveParent) throws Exception {
 
