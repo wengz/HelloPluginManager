@@ -58,6 +58,8 @@ public class PluginManifestUtil {
         }
         setAttrs(info, manifestXML);
     }
+
+
     private static boolean extractLibFile(ZipFile zip, File tardir)
             throws ZipException, IOException {
 

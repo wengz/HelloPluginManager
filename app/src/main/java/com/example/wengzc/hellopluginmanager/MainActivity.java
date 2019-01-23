@@ -1,5 +1,6 @@
 package com.example.wengzc.hellopluginmanager;
 
+import android.content.ComponentName;
 import android.content.Intent;
 import android.os.Environment;
 import android.support.v7.app.AppCompatActivity;
@@ -28,7 +29,7 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        tv = findViewById(R.id.tv);
+        tv = (TextView) findViewById(R.id.tv);
         tv.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -43,7 +44,6 @@ public class MainActivity extends AppCompatActivity {
                 }.start();
             }
         });
-
     }
 
     private File externalDir (){

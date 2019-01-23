@@ -28,7 +28,7 @@ import java.lang.reflect.Type;
 import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 
-import static java.lang.reflect.Member.PUBLIC;
+import static java.lang.reflect.Modifier.PUBLIC;
 import static java.lang.reflect.Modifier.FINAL;
 import static java.lang.reflect.Modifier.PRIVATE;
 import static java.lang.reflect.Modifier.PROTECTED;
@@ -204,6 +204,7 @@ public class ActivityClassGenerator {
         code.invokeVirtual(setComponent, i, i, localComp);
         code.returnValue(i);
     }
+
 
     private static <S, D extends S> void declareMethod_getPackageName(DexMaker dexMaker, TypeId<D> generatedType, String pkgName){
         MethodId<D, String> method = generatedType.getMethod(TypeId.STRING,

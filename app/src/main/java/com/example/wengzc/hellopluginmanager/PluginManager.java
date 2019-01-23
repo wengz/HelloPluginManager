@@ -10,13 +10,14 @@ import android.content.pm.ActivityInfo;
 import android.content.res.AssetManager;
 import android.content.res.Resources;
 import android.os.Build;
-import android.support.v4.app.AppLaunchChecker;
 import android.webkit.WebStorage;
 
 import java.io.File;
 import java.io.FileFilter;
+import java.io.FileNotFoundException;
 import java.lang.reflect.Method;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -62,6 +63,96 @@ public class PluginManager implements FileFilter{
             return instance;
         }
     }
+
+
+    public Collection<PluginInfo> loadPlugin (final File pluginSrcDirFile)
+        throws Exception{
+        checkInit();
+        if (pluginSrcDirFile == null || !pluginSrcDirFile.exists()){
+            return null;
+        }
+        if (pluginSrcDirFile.isFile()){
+            PluginInfo one = loadPluginWithId(pluginSrcDirFile, null, null);
+            return Collections.singletonList(one);
+        }
+
+        synchronized (this){
+            pluginPkgToInfoMap.clear();
+            pluginIdToInfoMap.clear();
+        }
+
+        File[] pluginApks = pluginSrcDirFile.listFiles(this);
+        if (pluginApks == null || pluginApks.length < 1){
+            throw new FileNotFoundException("");
+        }
+        for (File pluginApk : pluginApks){
+            PluginInfo pluginInfo = buildPlugInfo(pluginApk, null, null);
+            if (pluginInfo != null){
+                savePluginToMap(pluginInfo);
+            }
+        }
+        return pluginIdToInfoMap.values();
+    }
+
+    public PluginInfo loadPluginWithId (File pluginApk, String pluginId)
+        throws Exception{
+        return loadPluginWithId(pluginApk, pluginId, null);
+    }
+
+    public PluginInfo loadPluginWithId (File pluginApk, String pluginId,
+                String targetFileName) throws Exception{
+        checkInit();
+        PluginInfo pluginInfo = buildPlugInfo(pluginApk, pluginId, targetFileName);
+        if (pluginInfo != null){
+            savePluginToMap(pluginInfo);
+        }
+        return pluginInfo;
+    }
+
+    private synchronized void savePluginToMap (PluginInfo pluginInfo){
+        pluginPkgToInfoMap.put(pluginInfo.getPackageName(), pluginInfo);
+        pluginIdToInfoMap.put(pluginInfo.getId(), pluginInfo);
+    }
+
+    private PluginInfo buildPlugInfo (File pluginApk, String pluginId,
+              String targetFileName) throws Exception {
+        PluginInfo info = new PluginInfo();
+        info.setId(pluginId == null ? pluginApk.getName() : pluginId);
+
+        File privateFile = new File(dexInternalStoragePath,
+                targetFileName == null ? pluginApk.getName() : targetFileName);
+        info.setFilePath(privateFile.getAbsolutePath());
+
+        if (! pluginApk.getAbsolutePath().equals(privateFile.getAbsolutePath())){
+            copyApkoPrivatePath(pluginApk, privateFile);
+        }
+
+        String dexPath = privateFile.getAbsolutePath();
+        PluginManifestUtil.setManifestInfo(context, dexPath, info);
+
+        PluginClassLoader loader = new PluginClassLoader(dexPath, dexOutputPath, classLoader, info);
+        info.setClassLoader(loader);
+
+        try{
+            AssetManager assetManager = AssetManager.class.newInstance();
+            assetManager.getClass().getMethod("addAssetPath", String.class).invoke(assetManager, dexPath);
+            info.setAssetManager(assetManager);
+
+            Resources ctxResource = context.getResources();
+            Resources resources = new Resources(assetManager, ctxResource.getDisplayMetrics(), ctxResource.getConfiguration());
+            info.setResources(resources);
+
+        }catch (Exception e){
+            e.printStackTrace();
+        }
+
+        if (appAty != null){
+            initPluginApplication(info, appAty, true);
+        }
+
+        return info;
+    }
+
 
 
     /**
@@ -232,45 +323,6 @@ public class PluginManager implements FileFilter{
             pluginIdToInfoMap.remove(pl.getId());
         }
         return pl;
-    }
-
-
-
-    private PluginInfo buildPluginInfo (File pluginApk, String pluginId,
-        String targetFileName) throws Exception {
-        PluginInfo info = new PluginInfo();
-        info.setId(pluginId == null ? pluginApk.getName() : pluginId);
-
-        File privateFile = new File(dexInternalStoragePath,
-                targetFileName == null ? pluginApk.getName() : targetFileName);
-        info.setFilePath(privateFile.getAbsolutePath());
-
-        if (!pluginApk.getAbsolutePath().equals(privateFile.getAbsolutePath())){
-            copyApkoPrivatePath(pluginApk, privateFile);
-        }
-        String dexPath = privateFile.getAbsolutePath();
-        PluginManifestUtil.setManifestInfo(context, dexPath, info);
-
-        PluginClassLoader loader = new PluginClassLoader(dexPath, dexOutputPath, classLoader, info);
-        info.setClassLoader(loader);
-
-        try{
-            AssetManager am = AssetManager.class.newInstance();
-            am.getClass().getMethod("addAssetPath", String.class)
-                    .invoke(am, dexPath);
-            info.setAssetManager(am);
-            Resources ctxres = context.getResources();
-            Resources res = new Resources(am, ctxres.getDisplayMetrics(),
-                    ctxres.getConfiguration());
-            info.setResources(res);
-
-        }catch (Exception e){
-            e.printStackTrace();
-        }
-        if (appAty != null){
-            initPluginApplication(info, appAty, true);
-        }
-        return info;
     }
 
     void initPluginApplication (final PluginInfo info, Activity actFrom) throws Exception {

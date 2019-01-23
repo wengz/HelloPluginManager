@@ -17,11 +17,11 @@ public class PluginClassLoader extends DexClassLoader{
     private final Map<String, ClassLoader> proxyActivityLoaderMap;
 
     public PluginClassLoader (String dexPath, String optimizedDir, ClassLoader parent, PluginInfo plugin){
-        super(dexPath, optimizedDir, null, parent);
+        super(dexPath, optimizedDir, plugin.getPackageInfo().applicationInfo.nativeLibraryDir, parent);
         thisPlugin = plugin;
         proxyActivityLoaderMap = new HashMap<String, ClassLoader>();
-        this.libraryPath = null;
-        this.optimizedDirectory = null;
+        this.libraryPath = plugin.getPackageInfo().applicationInfo.nativeLibraryDir;
+        this.optimizedDirectory = optimizedDir;
         this.tag = "";
     }
 
@@ -56,7 +56,7 @@ public class PluginClassLoader extends DexClassLoader{
     }
 
 
-    private Class<?> finddByParent (String name, boolean throwEx) throws ClassNotFoundException {
+    private Class<?> findByParent(String name, boolean throwEx) throws ClassNotFoundException {
         Class<?> c = null;
         try{
             ClassLoader parent = getParent();
@@ -90,10 +90,10 @@ public class PluginClassLoader extends DexClassLoader{
                         e.printStackTrace();
                     }
                     if (c == null){
-                        c = finddByParent(name, true);
+                        c = findByParent(name, true);
                     }
                 }else{
-                    c = finddByParent(name, false);
+                    c = findByParent(name, false);
                     if (c == null){
                         c = findClass(name);
                     }

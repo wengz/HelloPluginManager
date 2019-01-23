@@ -17,6 +17,20 @@ public class ActivityOverider {
     static final String targetClassName = "androidx.pluginmgr.PluginActivity";
 
 
+    public static Object[] overrideAttachBaseContext(final String pluginId,final Activity fromAct,Context base){
+
+        PluginInfo plugin = PluginManager.getInstance().getPluginById(pluginId);
+        if (plugin.getApplication() == null) {
+            try {
+                PluginManager.getInstance().initPluginApplication(plugin,
+                        null);
+            } catch (Exception e) {
+            }
+        }
+        PluginActivityWrapper actWrapper = new PluginActivityWrapper(base, plugin.appWrapper, plugin);
+        return new Object[] { actWrapper, plugin.getAssetManager() };
+    }
+
     //------------------ service -------------------------
 
     public static ComponentName overrideStartService (Activity fromAct, String pluginId, Intent intent){

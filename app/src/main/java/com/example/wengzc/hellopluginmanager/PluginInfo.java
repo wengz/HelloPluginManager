@@ -231,7 +231,7 @@ public class PluginInfo {
     }
 
     public PluginClassLoader getClassLoader (){
-        return null;
+        return classLoader;
     }
 
 
